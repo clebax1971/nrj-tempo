@@ -27,7 +27,7 @@ export function renderDashboard(state) {
     const mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
     const now = new Date();
     recoEl.innerHTML =
-      '<div style="padding:14px 16px;border-radius:var(--r);margin-bottom:1rem;background:var(--bg3);border-left:3px solid var(--blue)">' +
+      '<div style="padding:14px 16px;border-radius:var(--r);margin-bottom:1rem;background:var(--bg3);border-left:3px solid var(--blue);text-align:center">' +
       '<div style="font-size:18px;font-weight:700;color:var(--text)">Bonjour</div>' +
       '<div style="font-size:13px;color:var(--text2);margin-top:4px">' +
       jours[now.getDay()] + ' ' + now.getDate() + ' ' + mois[now.getMonth()] + ' ' + now.getFullYear() +
