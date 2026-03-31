@@ -13,9 +13,10 @@ export function renderDashboard(state) {
   const isPaid = p => p.done || p.date <= today;
   const paid = cycle.payments.filter(isPaid).reduce((s, p) => s + p.amount, 0);
 
-  // Alertes
+  // Alertes — sans le dépassement vs prélèvements (redondant avec le bloc fusionné)
   const by = computeTempoBreakdown(cycle, state);
-  const alerts = generateAlerts(stats, extrap, paid, echeanceTotal, by, state, cycle);
+  const alerts = generateAlerts(stats, extrap, paid, echeanceTotal, by, state, cycle)
+    .filter(a => !a.message.toLowerCase().includes('prélèvement'));
   document.getElementById('db-alert').innerHTML = alerts
     .map(a => '<div class="alert alert-' + a.type + '">' + a.message + '</div>').join('');
 
@@ -25,15 +26,70 @@ export function renderDashboard(state) {
     const jours = ['dimanche','lundi','mardi','mercredi','jeudi','vendredi','samedi'];
     const mois = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
     const now = new Date();
-    const greeting = 'Bonjour, aujourd\'hui nous sommes le ' + jours[now.getDay()] + ' ' + now.getDate() + ' ' + mois[now.getMonth()] + ' ' + now.getFullYear();
-    recoEl.innerHTML = '<div style="padding:10px 14px;border-radius:var(--r);font-size:13px;margin-bottom:1rem;color:var(--text2);background:var(--bg3);border-left:3px solid var(--blue)">' + greeting + '</div>';
+    recoEl.innerHTML =
+      '<div style="padding:14px 16px;border-radius:var(--r);margin-bottom:1rem;background:var(--bg3);border-left:3px solid var(--blue)">' +
+      '<div style="font-size:18px;font-weight:700;color:var(--text)">Bonjour</div>' +
+      '<div style="font-size:13px;color:var(--text2);margin-top:4px">' +
+      jours[now.getDay()] + ' ' + now.getDate() + ' ' + mois[now.getMonth()] + ' ' + now.getFullYear() +
+      '</div></div>';
   }
 
-  // KPI
-  const pctCycle = Math.round(stats.elapsed / stats.totalDays * 100);
+  // KPI calc
   const pctPaid = Math.round(paid / echeanceTotal * 100);
+  const tarif0 = getTarif(state, today);
+  const aboElecTotal = tarif0.aboElec * 12 / 365 * stats.elapsed;
+  const aboGazTotal  = tarif0.aboGaz  * 12 / 365 * stats.elapsed;
+  const ctaTotal     = (tarif0.ctaElec + tarif0.ctaGaz) / 365 * stats.elapsed;
+  const elecTotal    = stats.elecCost + aboElecTotal;
+  const gazTotal     = stats.gasCost  + aboGazTotal;
+  const paidColor    = paid >= echeanceTotal ? 'var(--green)' : paid >= stats.total ? 'var(--blue)' : 'var(--amber)';
 
-  // Tempo card — vertical, rectangulaire
+  // Bloc fusionné : Consommé cycle + Prélevé échéancier
+  const fusionEl = document.getElementById('db-fusion');
+  if (fusionEl) {
+    fusionEl.innerHTML =
+      '<div class="card" style="margin-bottom:.75rem">' +
+      '<div style="display:flex;gap:1rem;flex-wrap:wrap">' +
+
+      // Colonne gauche : conso
+      '<div style="flex:1;min-width:140px">' +
+      '<div class="kpi-label">Consommé cycle</div>' +
+      '<div style="font-family:var(--mono);font-size:26px;font-weight:600;color:var(--blue);margin:.3rem 0">' + f2(stats.total) + '</div>' +
+      '<div style="font-size:11px;color:var(--text2);border-top:1px solid var(--border);padding-top:.4rem">' +
+      '<div style="display:flex;justify-content:space-between;padding:.15rem 0">' +
+      '<span>Élec <span style="color:var(--text3);font-size:10px">(abo ' + f2(aboElecTotal) + ')</span></span>' +
+      '<span style="font-family:var(--mono)">' + f2(elecTotal) + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:.15rem 0">' +
+      '<span>Gaz <span style="color:var(--text3);font-size:10px">(abo ' + f2(aboGazTotal) + ')</span></span>' +
+      '<span style="font-family:var(--mono)">' + f2(gazTotal) + '</span></div>' +
+      '<div style="display:flex;justify-content:space-between;padding:.15rem 0;color:var(--text3)">' +
+      '<span>CTA proratisé</span><span style="font-family:var(--mono)">' + f2(ctaTotal) + '</span></div>' +
+      '</div></div>' +
+
+      // Séparateur vertical
+      '<div style="width:1px;background:var(--border);flex-shrink:0"></div>' +
+
+      // Colonne droite : prélevé
+      (function() {
+        const paidElec = (cycle.echElec || 0) * cycle.months * (paid / echeanceTotal);
+        const paidGaz  = (cycle.echGaz  || 0) * cycle.months * (paid / echeanceTotal);
+        return '<div style="flex:1;min-width:140px">' +
+        '<div class="kpi-label">Prélevé échéancier</div>' +
+        '<div style="font-family:var(--mono);font-size:26px;font-weight:600;color:' + paidColor + ';margin:.3rem 0">' + f2(paid) + '</div>' +
+        '<div style="height:5px;background:var(--bg4);border-radius:3px;overflow:hidden;margin-bottom:.4rem">' +
+        '<div style="height:5px;width:' + Math.min(pctPaid, 100) + '%;background:' + paidColor + ';border-radius:3px"></div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text3);border-top:1px solid var(--border);padding-top:.4rem">' +
+        (cycle.echElec ? '<div style="display:flex;justify-content:space-between;padding:.15rem 0"><span>Élec</span><span style="font-family:var(--mono)">' + f2(paidElec) + '</span></div>' : '') +
+        (cycle.echGaz  ? '<div style="display:flex;justify-content:space-between;padding:.15rem 0"><span>Gaz</span><span style="font-family:var(--mono)">' + f2(paidGaz)  + '</span></div>' : '') +
+        '<div style="display:flex;justify-content:space-between;padding:.15rem 0"><span>Reste</span><span style="font-family:var(--mono);color:var(--text2)">' + f2(Math.max(0, echeanceTotal - paid)) + '</span></div>' +
+        '</div></div>';
+      })() +
+
+      '</div></div>';
+  }
+
+  // Tempo card seule dans kpi-grid
   const totalKwh = (by.blue.kwh + by.white.kwh + by.red.kwh) || 1;
   const mkTempoRow = (color, label, data) => {
     const pct = Math.round(data.kwh / totalKwh * 100);
@@ -48,7 +104,7 @@ export function renderDashboard(state) {
       '</div>' +
       '</div>';
   };
-  const tempoCard =
+  document.getElementById('db-kpi').innerHTML =
     '<div class="kpi" style="justify-content:flex-start;gap:.1rem">' +
     '<div class="kpi-label">Répartition Tempo</div>' +
     mkTempoRow('blue', 'Bleu', by.blue) +
@@ -56,89 +112,41 @@ export function renderDashboard(state) {
     mkTempoRow('red', 'Rouge', by.red) +
     '</div>';
 
-  // Conso cycle — détail abo séparé
-  const tarif0 = getTarif(state, today);
-  const aboElecTotal = tarif0.aboElec * 12 / 365 * stats.elapsed;
-  const aboGazTotal  = tarif0.aboGaz  * 12 / 365 * stats.elapsed;
-  const ctaTotal     = (tarif0.ctaElec + tarif0.ctaGaz) / 365 * stats.elapsed;
-  const elecTotal    = stats.elecCost + aboElecTotal;
-  const gazTotal     = stats.gasCost  + aboGazTotal;
-
-  const consoCard =
-    '<div class="kpi" style="justify-content:flex-start;gap:.25rem">' +
-    '<div class="kpi-label">Consommé cycle</div>' +
-    '<div class="kpi-val c-blue">' + f2(stats.total) + '</div>' +
-    '<div style="margin-top:.25rem;width:100%">' +
-    '<div style="display:flex;justify-content:space-between;font-size:11px;padding:.15rem 0;border-bottom:1px solid var(--border)">' +
-    '<span style="color:var(--text2)">Élec <span style="color:var(--text3);font-size:10px">(dont abo ' + f2(aboElecTotal) + ')</span></span>' +
-    '<span style="font-family:var(--mono)">' + f2(elecTotal) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between;font-size:11px;padding:.15rem 0;border-bottom:1px solid var(--border)">' +
-    '<span style="color:var(--text2)">Gaz <span style="color:var(--text3);font-size:10px">(dont abo ' + f2(aboGazTotal) + ')</span></span>' +
-    '<span style="font-family:var(--mono)">' + f2(gazTotal) + '</span></div>' +
-    '<div style="display:flex;justify-content:space-between;font-size:11px;padding:.15rem 0">' +
-    '<span style="color:var(--text3)">CTA proratisé</span>' +
-    '<span style="font-family:var(--mono);color:var(--text2)">' + f2(ctaTotal) + '</span></div>' +
-    '</div></div>';
-
-  document.getElementById('db-kpi').innerHTML =
-    consoCard +
-    tempoCard +
-    '<div class="kpi" style="justify-content:flex-start;gap:.25rem">' +
-    '<div class="kpi-label">Prélevé échéancier</div>' +
-    '<div class="kpi-val ' + (paid >= stats.total ? 'c-ok' : 'c-warn') + '">' + f2(paid) + '</div>' +
-    '<div style="width:100%;margin-top:.25rem">' +
-    '<div style="height:6px;background:var(--bg4);border-radius:3px;overflow:hidden">' +
-    '<div style="height:6px;width:' + Math.min(pctPaid, 100) + '%;background:' + (paid >= echeanceTotal ? 'var(--green)' : paid >= stats.total ? 'var(--blue)' : 'var(--amber)') + ';border-radius:3px"></div>' +
+  // --- Extrapolation : fin de cycle + fin de mois empilés compacts ---
+  const mkCompactCard = (title, total, ecClass, elecVal, gazVal, sub) =>
+    '<div class="card" style="margin-bottom:.5rem;padding:.75rem 1rem">' +
+    '<div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">' +
+    '<div style="min-width:100px">' +
+    '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.2rem">' + title + '</div>' +
+    '<div style="font-family:var(--mono);font-size:24px;font-weight:700" class="' + ecClass + '">' + f2(total) + '</div>' +
     '</div>' +
-    '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:3px">' +
-    '<span>' + pctPaid + '% prélevé</span><span>Objectif ' + f2(echeanceTotal) + '</span>' +
-    '</div>' +
-    '<div style="font-size:11px;color:var(--text2);margin-top:.3rem">' +
-    'Reste à prélever : <span style="font-family:var(--mono)">' + f2(Math.max(0, echeanceTotal - paid)) + '</span>' +
+    '<div style="flex:1;min-width:120px;font-size:11px;color:var(--text3);border-left:1px solid var(--border);padding-left:.75rem">' +
+    '<div>Élec : <span style="color:var(--blue)">' + f2(elecVal) + '</span></div>' +
+    '<div>Gaz+fixe : <span style="color:#f97316">' + f2(gazVal) + '</span></div>' +
+    '<div style="margin-top:.2rem">' + sub + '</div>' +
     '</div>' +
     '</div></div>';
 
-  // --- Extrapolation saisonnière ---
-  const extrapEl = document.getElementById('db-extrap');
+  const finCycleEl = document.getElementById('db-fin-cycle');
+  const finMoisEl  = document.getElementById('db-fin-mois');
   if (!extrap) {
-    extrapEl.innerHTML = '<div style="color:var(--text3);font-size:12px">Aucun cycle de référence défini.</div>';
+    if (finCycleEl) finCycleEl.innerHTML = '';
+    if (finMoisEl)  finMoisEl.innerHTML  = '';
   } else {
     const diff = extrap.totalProjected - echeanceTotal;
-    const ec = diff <= 0 ? 'c-ok' : diff <= 150 ? 'c-warn' : 'c-danger';
-
-    // Totaux élec/gaz fin de cycle
+    const ec   = diff <= 0 ? 'c-ok' : diff <= 150 ? 'c-warn' : 'c-danger';
     const cycleElecProj = extrap.months.reduce((s, m) => s + m.elecCost, 0);
     const cycleGazProj  = extrap.months.reduce((s, m) => s + m.gasCost + m.fixedCost, 0);
-
-    // Période courante (partielle ou 1ère estimée)
-    const curMonth = extrap.months.find(m => m.status === 'partial') || extrap.months.find(m => m.status === 'estimated');
-    const moisDiff = curMonth ? curMonth.total - (echeanceTotal / 12) : 0;
-    const mec = moisDiff <= 0 ? 'c-ok' : moisDiff <= 50 ? 'c-warn' : 'c-danger';
-
-    const mkCard = (title, total, ecClass, elecVal, gazVal, sub) =>
-      '<div style="flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:.75rem">' +
-      '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">' + title + '</div>' +
-      '<div style="font-family:var(--mono);font-size:26px;font-weight:600;flex:1;display:flex;align-items:center" class="' + ecClass + '">' + f2(total) + '</div>' +
-      '<div style="margin-top:.5rem;font-size:10px;color:var(--text3);border-top:1px solid var(--border);padding-top:.4rem">' +
-      '<div>Élec : <span style="color:var(--blue)">' + f2(elecVal) + '</span></div>' +
-      '<div>Gaz+fixe : <span style="color:#f97316">' + f2(gazVal) + '</span></div>' +
-      '<div style="margin-top:.25rem">' + sub + '</div>' +
-      '</div></div>';
-
     const finCycleSub = 'Objectif ' + f2(echeanceTotal) + ' · Écart <span class="' + ec + '">' + (diff >= 0 ? '+' : '') + f2(diff) + '</span>';
-    const finMoisSub = curMonth
-      ? (curMonth.label + ' · Écart vs 1/12 <span class="' + mec + '">' + (moisDiff >= 0 ? '+' : '') + f2(moisDiff) + '</span>')
-      : 'Période non disponible';
+    if (finCycleEl) finCycleEl.innerHTML = mkCompactCard('Extrapolation fin de cycle', extrap.totalProjected, ec, cycleElecProj, cycleGazProj, finCycleSub);
 
-    extrapEl.innerHTML =
-      '<div class="card" style="flex:1;box-sizing:border-box;display:flex;flex-direction:column">' +
-      '<div class="card-title">Extrapolation</div>' +
-      '<div style="display:flex;gap:.5rem;flex:1">' +
-      mkCard('Fin de cycle', extrap.totalProjected, ec, cycleElecProj, cycleGazProj, finCycleSub) +
-      (curMonth ? mkCard('Fin de mois', curMonth.total, mec, curMonth.elecCost, curMonth.gasCost + curMonth.fixedCost, finMoisSub) : '') +
-      '</div>' +
-      '<div style="font-size:10px;color:var(--text3);margin-top:.4rem">Fiabilité ±' + extrap.reliability + '% · ' + extrap.completePositions + '/12 périodes · pace ratio × C1</div>' +
-      '</div>';
+    const curMonth = extrap.months.find(m => m.status === 'partial') || extrap.months.find(m => m.status === 'estimated');
+    if (curMonth && finMoisEl) {
+      const moisDiff = curMonth.total - (echeanceTotal / 12);
+      const mec = moisDiff <= 0 ? 'c-ok' : moisDiff <= 50 ? 'c-warn' : 'c-danger';
+      const finMoisSub = curMonth.label + ' · Écart vs 1/12 <span class="' + mec + '">' + (moisDiff >= 0 ? '+' : '') + f2(moisDiff) + '</span>';
+      finMoisEl.innerHTML = mkCompactCard('Extrapolation fin de mois', curMonth.total, mec, curMonth.elecCost, curMonth.gasCost + curMonth.fixedCost, finMoisSub);
+    }
   }
 
   // Détail journalier

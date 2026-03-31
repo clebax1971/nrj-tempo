@@ -1,4 +1,4 @@
-const CACHE = 'edf-tempo-v5';
+const CACHE = 'edf-tempo-v7';
 const ASSETS = [
   './',
   './index.html',
